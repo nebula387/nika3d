@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Секреты
+.env
+
+# Godot
+godot_project/.godot/
+godot_project/export_presets.cfg
+
+# Ассеты персонажей (хранить отдельно, не в git — скачивать с quaternius.com)
+godot_project/assets/character/
+
+# OS
+.DS_Store
+Thumbs.db

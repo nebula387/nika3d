@@ -1,0 +1,11 @@
+# Этап 1 — минимальный набор. Дополнять по мере реализации Этапов 2-3
+# (rhubarb обвязка не требует pip-пакета, это отдельный бинарник,
+# см. примечание в lipsync.py когда дойдём до Этапа 2)
+
+requests
+sounddevice
+numpy
+openai-whisper
+piper-tts
+python-dotenv
+websockets
