@@ -111,6 +111,13 @@ Groq API, модель `openai/gpt-oss-120b`. Ключ в `.env`.
 `speech_state: idle` → возврат в Idle. Режим разговора: 10 секунд ожидания
 продолжения без слова активации. Весь пайплайн работает и проверен.
 
+### Этап 1.5 — замена аватара на VRoid VRM
+Заменить Quaternius FBX на персонажа из VRoid Studio (.vrm формат).
+Инструмент: плагин godot-vrm (V-Sekai) для Godot 4.
+Новый скрипт: `character_controller_vrm.gd` — моргание, движение рта (синусоида).
+Blend shapes: `Fcl_EYE_Close_L/R`, `Fcl_MTH_A`, `Fcl_BRW_Fun` (стандарт VRoid Studio).
+Инструкция: `docs/setup-vrm.md`.
+
 ### Этап 2 — липсинк по визёмам
 Добавить Rhubarb, генерировать визёмы из WAV, прокидывать в Godot,
 управлять blend shapes рта покадрово.
