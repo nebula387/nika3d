@@ -1,15 +1,13 @@
 """
 Распознавание речи через Whisper + VAD по пиковой амплитуде.
 
-Схема по аналогии со старым проектом (nika.py):
+Схема:
   1. Слушаем фиксированными 2-секундными чанками через sd.rec()
   2. Если пиковая громкость ниже порога — пропускаем (тишина)
-  3. Транскрибируем чанк; ищем слово активации
-  4. На активации — отдельная запись команды через record_until_silence()
-  5. Транскрибируем команду и возвращаем как текст запроса
-
-language=None — авто-определение языка (лучше справляется с "Ника" на русском
-и "Nika" на английском, чем жёстко заданный язык).
+  3. Транскрибируем чанк с language=None — нужно поймать «Ника» на русском
+  4. На активации — отдельная запись команды
+  5. Команду транскрибируем с language="en" + initial_prompt:
+     Whisper знает что ждать английский → лучше справляется с акцентом
 """
 
 import numpy as np
@@ -30,6 +28,14 @@ WAKE_VARIANTS = [
     "ника", "нике", "нека", "никa",   # кириллица + опечатки
     "nika", "nica", "nike", "nika,",   # латиница
 ]
+
+# Подсказка для Whisper при распознавании команд на английском.
+# Перечисляем типичные фразы — модель берёт их как контекст и лучше
+# справляется с акцентом и нечёткой речью.
+_EN_PROMPT = (
+    "Nika, hello, yes, no, tell me, what, how are you, "
+    "can you, please, I want, I think, show me, let's talk"
+)
 
 
 def load_whisper() -> whisper.Whisper:
@@ -93,7 +99,9 @@ def listen_for_followup(model: whisper.Whisper, timeout_sec: float = 10.0) -> st
             audio = _record_until_silence()
             if audio is None:
                 continue
-            result = model.transcribe(audio, language=None, fp16=False)
+            result = model.transcribe(
+                audio, language="en", fp16=False, initial_prompt=_EN_PROMPT
+            )
             text = result["text"].strip()
             if text:
                 print(f"[ASR] продолжение: «{text.lower()}»")
@@ -140,7 +148,9 @@ def listen_for_wake_word(model: whisper.Whisper) -> str:
             if audio is None:
                 continue
 
-            result2 = model.transcribe(audio, language=None, fp16=False)
+            result2 = model.transcribe(
+                audio, language="en", fp16=False, initial_prompt=_EN_PROMPT
+            )
             command = result2["text"].strip()
             if command:
                 return command
