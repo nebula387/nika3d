@@ -156,7 +156,7 @@ func _tick_mouth(delta: float) -> void:
 func _set_bs(bs_name: String, value: float) -> void:
 	if _face_mesh == null or _face_mesh.mesh == null:
 		return
-	var idx := _face_mesh.mesh.find_blend_shape_by_name(bs_name)
+	var idx: int = _face_mesh.mesh.find_blend_shape_by_name(bs_name)
 	if idx >= 0:
 		_face_mesh.set_blend_shape_value(idx, value)
 
