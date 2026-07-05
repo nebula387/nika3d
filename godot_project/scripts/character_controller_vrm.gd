@@ -14,7 +14,7 @@
 ## Если blend shapes не находятся — проверь BLEND_SHAPE_* константы ниже
 ## и подстрой под имена в своей модели (они видны в Godot в ImportPreview).
 
-extends Node3D
+extends Node
 
 # ── Настройка blend shapes ─────────────────────────────────────────────────
 # Стандарт VRM 0.x (VRoid Studio): именно такие имена
