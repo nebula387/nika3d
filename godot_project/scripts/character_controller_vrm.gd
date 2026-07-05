@@ -163,11 +163,11 @@ func _set_bs(bs_name: String, value: float) -> void:
 
 func _find_face_mesh() -> MeshInstance3D:
 	var best: MeshInstance3D
-	var best_count := 0
+	var best_count: int = 0
 	for node in find_children("*", "MeshInstance3D", true, false):
-		var mi := node as MeshInstance3D
+		var mi: MeshInstance3D = node as MeshInstance3D
 		if mi and mi.mesh:
-			var n := mi.mesh.get_blend_shape_count()
+			var n: int = mi.mesh.get_blend_shape_count()
 			if n > best_count:
 				best_count = n
 				best = mi
@@ -175,10 +175,10 @@ func _find_face_mesh() -> MeshInstance3D:
 
 
 func _pick_animation(anim: AnimationPlayer, names: Array) -> String:
-	for n in names:
-		if anim.has_animation(n):
-			return n
-	var list := anim.get_animation_list()
+	for anim_name in names:
+		if anim.has_animation(anim_name):
+			return anim_name
+	var list: Array = anim.get_animation_list()
 	return list[0] if list.size() > 0 else ""
 
 
