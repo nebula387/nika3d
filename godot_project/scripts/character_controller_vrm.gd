@@ -53,6 +53,9 @@ var _blink_value:    float = 0.0   # 0=открыто, 1=закрыто
 var _blink_closing:  bool  = false
 var _mouth_phase:    float = 0.0
 
+# Кэш: имя blend shape → индекс (заполняется один раз в _ready)
+var _bs_cache: Dictionary = {}
+
 
 func _ready() -> void:
 	randomize()
@@ -73,9 +76,10 @@ func _ready() -> void:
 	# Меш лица — ищем MeshInstance с наибольшим числом blend shapes
 	_face_mesh = _find_face_mesh()
 	if _face_mesh:
+		_build_bs_cache()
 		print("[VRM] Меш лица: '%s', blend shapes: %d" % [
 			_face_mesh.name, _face_mesh.mesh.get_blend_shape_count()])
-		# _debug_list_blend_shapes()  # раскомментировать если нужно увидеть имена
+		_debug_list_blend_shapes()  # выводим все имена чтобы подстроить константы
 	else:
 		push_warning("[VRM] Меш с blend shapes не найден — мимика недоступна")
 
@@ -153,12 +157,20 @@ func _tick_mouth(delta: float) -> void:
 
 # ── Вспомогательные ───────────────────────────────────────────────────────
 
-func _set_bs(bs_name: String, value: float) -> void:
+func _build_bs_cache() -> void:
+	_bs_cache.clear()
 	if _face_mesh == null or _face_mesh.mesh == null:
 		return
-	var idx: int = _face_mesh.mesh.find_blend_shape_by_name(bs_name)
-	if idx >= 0:
-		_face_mesh.set_blend_shape_value(idx, value)
+	var count: int = _face_mesh.mesh.get_blend_shape_count()
+	for i in count:
+		var bs_name: String = _face_mesh.mesh.get_blend_shape_name(i)
+		_bs_cache[bs_name] = i
+
+
+func _set_bs(bs_name: String, value: float) -> void:
+	if _face_mesh == null or not _bs_cache.has(bs_name):
+		return
+	_face_mesh.set_blend_shape_value(_bs_cache[bs_name], value)
 
 
 func _find_face_mesh() -> MeshInstance3D:
@@ -182,10 +194,9 @@ func _pick_animation(anim: AnimationPlayer, names: Array) -> String:
 	return list[0] if list.size() > 0 else ""
 
 
-# Раскомментировать при отладке чтобы увидеть все blend shapes в Output:
 func _debug_list_blend_shapes() -> void:
 	if _face_mesh == null:
 		return
 	print("[VRM] Все blend shapes в '%s':" % _face_mesh.name)
-	for i in _face_mesh.mesh.get_blend_shape_count():
-		print("  [%d] %s" % [i, _face_mesh.mesh.get_blend_shape_name(i)])
+	for bs_name in _bs_cache:
+		print("  [%d] %s" % [_bs_cache[bs_name], bs_name])
