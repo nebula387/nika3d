@@ -9,3 +9,7 @@ websockets
 # TTS-провайдеры (нужен хотя бы один)
 piper-tts          # локальный TTS (TTS_PROVIDER=piper)
 # elevenlabs — не нужен отдельный пакет: используем requests напрямую
+
+# Управление ПК (Этап 1.6)
+pyautogui          # клавиатура и мышь
+pyperclip          # буфер обмена (для ввода текста)
