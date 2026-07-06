@@ -41,6 +41,11 @@ def main() -> None:
                 print(f"[Команда] {command}")
 
                 reply, action = llm_module.ask(command)
+
+                # Защита: если reply пустой или это сырой JSON — не говорим мусор
+                if not reply or reply.strip().startswith("{"):
+                    reply = "Sorry, I had a little glitch. Could you say that again?"
+
                 print(f"[Ника] {reply}")
                 if action:
                     print(f"[Действие] {action}")

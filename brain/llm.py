@@ -79,7 +79,10 @@ def ask(user_text: str) -> tuple[str, dict | None]:
         raise RuntimeError(f"Groq API {resp.status_code}: {resp.text}")
 
     raw = resp.json()["choices"][0]["message"]["content"].strip()
-    return _parse(raw)
+    print(f"[LLM] raw: {raw[:120]}")
+    reply, action = _parse(raw)
+    print(f"[LLM] reply=«{reply[:80]}» action={action}")
+    return reply, action
 
 
 def _parse(raw: str) -> tuple[str, dict | None]:
