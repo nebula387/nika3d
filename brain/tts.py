@@ -1,7 +1,8 @@
 """
 Синтез речи. Провайдер выбирается через TTS_PROVIDER в .env:
-  - "elevenlabs" — облачный API, живой голос, ~0.5с задержка (рекомендуется)
-  - "piper"      — локально, без интернета, базовое качество (запасной вариант)
+  - "xtts"       — локально, EN+RU, клонирование голоса (рекомендуется)
+  - "piper"      — локально, только EN, быстрее, проще
+  - "elevenlabs" — облако, естественно, но платно и требует интернет
 """
 
 import io
@@ -14,7 +15,7 @@ import sounddevice as sd
 import config
 
 
-# ── Очистка текста перед синтезом ─────────────────────────────────────────
+# ── Очистка текста перед синтезом ─────────────────────────────────────────────
 
 def _clean(text: str) -> str:
     text = re.sub(r"\*+", "", text)
@@ -25,13 +26,18 @@ def _clean(text: str) -> str:
     return text
 
 
-# ── Загрузка (только для Piper) ────────────────────────────────────────────
+# ── Загрузка (зависит от провайдера) ──────────────────────────────────────────
 
 def load_voice():
     """
-    Возвращает объект голоса Piper или None для облачных провайдеров.
-    main.py передаёт результат в speak() — это сохраняет совместимость.
+    Предзагружает модель/голос.
+    main.py передаёт результат в speak() для обратной совместимости.
     """
+    if config.TTS_PROVIDER == "xtts":
+        import tts_xtts
+        tts_xtts.load()
+        return None  # XTTS хранит модель внутри своего модуля
+
     if config.TTS_PROVIDER == "piper":
         from piper.voice import PiperVoice
         print("[TTS] Загрузка голоса Piper...")
@@ -43,7 +49,7 @@ def load_voice():
     return None
 
 
-# ── Основная функция синтеза ───────────────────────────────────────────────
+# ── Основная функция синтеза ───────────────────────────────────────────────────
 
 def speak(voice, text: str) -> None:
     """Синтезировать text и воспроизвести. Блокирует до окончания воспроизведения."""
@@ -51,13 +57,20 @@ def speak(voice, text: str) -> None:
     if not clean:
         return
 
-    if config.TTS_PROVIDER == "elevenlabs":
+    if config.TTS_PROVIDER == "xtts":
+        import tts_xtts
+        tts_xtts.speak(
+            clean,
+            speaker_wav=config.XTTS_SPEAKER_WAV,
+            language=config.XTTS_LANGUAGE,
+        )
+    elif config.TTS_PROVIDER == "elevenlabs":
         _speak_elevenlabs(clean)
     else:
         _speak_piper(voice, clean)
 
 
-# ── ElevenLabs ─────────────────────────────────────────────────────────────
+# ── ElevenLabs ────────────────────────────────────────────────────────────────
 
 def _speak_elevenlabs(text: str) -> None:
     import requests
@@ -82,20 +95,19 @@ def _speak_elevenlabs(text: str) -> None:
         },
     }
 
-    print(f"[TTS] ElevenLabs синтез: «{text[:60]}{'...' if len(text) > 60 else ''}»")
+    print(f"[TTS] ElevenLabs синтез: «{text[:60]}»")
     resp = requests.post(url, headers=headers, json=body, timeout=15)
 
     if resp.status_code != 200:
         print(f"[TTS] Ошибка ElevenLabs {resp.status_code}: {resp.text[:200]}")
         return
 
-    # output_format=pcm_22050 → сырые int16-сэмплы, mono, 22050 Hz
     audio = np.frombuffer(resp.content, dtype=np.int16)
     sd.play(audio, samplerate=22050)
     sd.wait()
 
 
-# ── Piper (локальный запасной вариант) ─────────────────────────────────────
+# ── Piper (локальный запасной вариант) ────────────────────────────────────────
 
 def _speak_piper(voice, text: str) -> None:
     buf = io.BytesIO()

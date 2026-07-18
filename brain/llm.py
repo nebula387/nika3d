@@ -1,9 +1,13 @@
 """
-Клиент к Groq API (OpenAI-совместимый REST).
+LLM-клиент (совместим с OpenAI API).
 
-Возвращает tuple (reply: str, action: dict | None).
-  reply  — текст для озвучки
-  action — словарь действия или None если просто разговор
+Провайдеры:
+  lmstudio — локальный сервер LM Studio (localhost:1234)
+  groq     — облако Groq
+
+Два режима:
+  - Разговор: plain text, оригинальный промпт
+  - Действие: JSON reply+action, когда в команде есть ключевые слова
 """
 
 import json
@@ -13,92 +17,112 @@ import requests
 
 import config
 
-_GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+# ── Промпт для обычного разговора ─────────────────────────────────────────────
+_CONV_PROMPT = (
+    "You are Nika, a friendly voice 3D companion. "
+    "Detect the language the user writes in and ALWAYS reply in THAT SAME language "
+    "(Russian if they write Russian, English if English). "
+    "Be warm, natural, conversational. "
+    "Keep responses short: 1-3 sentences max. "
+    "Never use markdown, asterisks, bullet points, hashtags or emojis — plain text only."
+)
 
-_SYSTEM_PROMPT = """\
-You are Nika, a friendly voice 3D companion and PC assistant.
+# ── Промпт для команд управления ПК ───────────────────────────────────────────
+_ACTION_PROMPT = """\
+You are a PC assistant. Return ONLY valid JSON, no other text, no markdown:
+{"reply": "one-sentence confirmation in the user's language", "action": {...}}
 
-ALWAYS respond with valid JSON only — no extra text, no markdown fences:
-{"reply": "...", "action": null}
-
-reply rules:
-- English only, 1-3 sentences, warm and natural
-- No markdown, no asterisks, no emojis
-- You understand Russian perfectly; always reply in English
-
-action — set to null for normal conversation.
-For PC control commands use one of these:
-
-Open a website:
+Available actions:
 {"type":"open_url","url":"https://..."}
-
-Open an installed program (use Windows app name):
-{"type":"open_app","app":"chrome"}
-
-Search on Google:
+{"type":"open_app","app":"windows_app_name"}
 {"type":"search_web","query":"search terms"}
-
-Search on YouTube:
-{"type":"open_url","url":"https://www.youtube.com/results?search_query=search+terms"}
-
-Type text (user must click the target field first):
 {"type":"type_text","text":"text to type","delay":2}
+
+YouTube search: {"type":"open_url","url":"https://www.youtube.com/results?search_query=query+words"}
 
 Examples:
 "open YouTube" → {"reply":"Opening YouTube!","action":{"type":"open_url","url":"https://youtube.com"}}
-"search cats on YouTube" → {"reply":"Searching for cats on YouTube!","action":{"type":"open_url","url":"https://www.youtube.com/results?search_query=cats"}}
-"open Notepad" → {"reply":"Sure, opening Notepad!","action":{"type":"open_app","app":"notepad"}}
-"open Chrome" → {"reply":"Opening Chrome!","action":{"type":"open_app","app":"chrome"}}
-"type Hello World" → {"reply":"I'll type that in 2 seconds, please click where you want it!","action":{"type":"type_text","text":"Hello World","delay":2}}
-"search Python tutorials" → {"reply":"Searching for Python tutorials!","action":{"type":"search_web","query":"Python tutorials"}}
-"how are you" → {"reply":"I'm doing great, thanks for asking!","action":null}\
+"найди котов на ютубе" → {"reply":"Ищу котов!","action":{"type":"open_url","url":"https://www.youtube.com/results?search_query=коты"}}
+"open Notepad" → {"reply":"Opening Notepad!","action":{"type":"open_app","app":"notepad"}}
+"напечатай Привет мир" → {"reply":"Напечатаю через 2 секунды, кликни в нужное поле!","action":{"type":"type_text","text":"Привет мир","delay":2}}\
 """
+
+# Слова → режим действия
+_ACTION_KEYWORDS = [
+    "open ", "launch ", "start ", "run ",
+    "search ", "find ", "look up", "look for",
+    "type ", "write ", "enter ", "input ",
+    "go to ", "navigate ", "browse ",
+    # Русские
+    "открой ", "запусти ", "открыть ", "запустить ",
+    "найди ", "поищи ", "найти ", "поиск ",
+    "напечатай ", "введи ", "напиши ",
+    "перейди ", "зайди ",
+]
 
 
 def ask(user_text: str) -> tuple[str, dict | None]:
-    """
-    Отправить вопрос в LLM.
-    Возвращает (текст_ответа, action_или_None).
-    """
+    """Возвращает (текст_ответа, action_или_None)."""
+    if _is_action(user_text):
+        return _ask_action(user_text)
+    return _ask_conversation(user_text), None
+
+
+# ── Обычный разговор ───────────────────────────────────────────────────────────
+
+def _ask_conversation(user_text: str) -> str:
+    raw = _call(_CONV_PROMPT, user_text, max_tokens=256)
+    print(f"[LLM] беседа: «{raw[:100]}»")
+    return raw
+
+
+# ── Команда действия ───────────────────────────────────────────────────────────
+
+def _ask_action(user_text: str) -> tuple[str, dict | None]:
+    raw = _call(_ACTION_PROMPT, user_text, max_tokens=200)
+    print(f"[LLM] действие raw: {raw[:120]}")
+
+    text = re.sub(r"^```[a-z]*\n?", "", raw.strip())
+    text = re.sub(r"\n?```$", "", text)
+
+    try:
+        data   = json.loads(text)
+        reply  = str(data.get("reply", "Готово!")).strip()
+        action = data.get("action") or None
+        if action and not isinstance(action, dict):
+            action = None
+        print(f"[LLM] reply=«{reply}» action={action}")
+        return reply, action
+    except (json.JSONDecodeError, AttributeError):
+        print("[LLM] не JSON, использую как текст")
+        return raw, None
+
+
+# ── Определение: действие или разговор? ───────────────────────────────────────
+
+def _is_action(text: str) -> bool:
+    lower = text.lower()
+    return any(kw in lower for kw in _ACTION_KEYWORDS)
+
+
+# ── HTTP-вызов ────────────────────────────────────────────────────────────────
+
+def _call(system_prompt: str, user_text: str, max_tokens: int = 256) -> str:
+    url = f"{config.LLM_BASE_URL.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {config.LLM_API_KEY}",
         "Content-Type": "application/json",
     }
     body = {
-        "model": config.LLM_MODEL,
+        "model":       config.LLM_MODEL,
         "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user",   "content": user_text},
         ],
-        "max_tokens": 300,
+        "max_tokens":  max_tokens,
         "temperature": 0.7,
     }
-
-    resp = requests.post(_GROQ_URL, headers=headers, json=body, timeout=15)
+    resp = requests.post(url, headers=headers, json=body, timeout=30)
     if not resp.ok:
-        raise RuntimeError(f"Groq API {resp.status_code}: {resp.text}")
-
-    raw = resp.json()["choices"][0]["message"]["content"].strip()
-    print(f"[LLM] raw: {raw[:120]}")
-    reply, action = _parse(raw)
-    print(f"[LLM] reply=«{reply[:80]}» action={action}")
-    return reply, action
-
-
-def _parse(raw: str) -> tuple[str, dict | None]:
-    """Распарсить JSON-ответ LLM. При ошибке вернуть raw как reply без action."""
-    # Убрать markdown-обёртки ```json ... ``` если LLM всё же добавил
-    text = re.sub(r"^```[a-z]*\n?", "", raw.strip())
-    text = re.sub(r"\n?```$", "", text)
-
-    try:
-        data = json.loads(text)
-        reply  = str(data.get("reply", raw)).strip()
-        action = data.get("action") or None
-        if action and not isinstance(action, dict):
-            action = None
-        return reply, action
-    except (json.JSONDecodeError, AttributeError):
-        # LLM не вернул JSON — вся строка идёт как reply
-        print(f"[LLM] Не JSON, использую как текст: {raw[:80]}")
-        return raw, None
+        raise RuntimeError(f"LLM API {resp.status_code}: {resp.text[:200]}")
+    return resp.json()["choices"][0]["message"]["content"].strip()
