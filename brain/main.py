@@ -11,7 +11,13 @@
   4. Основной цикл: слушать → LLM → говорить → действие → повторить
 """
 
+import sys
 import time
+
+# Принудительный UTF-8 для stdout/stderr — иначе print() с кириллицей
+# падает на Windows, если консоль не в кодировке UTF-8 (chcp 65001).
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import actions
 import asr as asr_module

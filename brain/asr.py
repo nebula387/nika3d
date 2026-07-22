@@ -1,13 +1,17 @@
 """
 Распознавание речи через Whisper + VAD по пиковой амплитуде.
 
+Только английский (см. решение пользователя от 2026-07-18): язык больше не
+определяется — это экономит время на каждый чанк и убирает риск того, что
+Whisper угадает не тот язык на несвязной/запинающейся речи.
+
 Схема:
   1. Слушаем фиксированными 2-секундными чанками через sd.rec()
   2. Если пиковая громкость ниже порога — пропускаем (тишина)
-  3. Транскрибируем чанк с language=None — нужно поймать «Ника» на русском
-  4. На активации — отдельная запись команды
-  5. Команду транскрибируем с language="en" + initial_prompt:
-     Whisper знает что ждать английский → лучше справляется с акцентом
+  3. Транскрибируем чанк с language="en" — нужно поймать «Nika»
+  4. На активации — отдельная запись команды (пауза SILENCE_SECONDS
+     увеличена, чтобы не резать команду на паузах при запинающейся речи)
+  5. Команду тоже транскрибируем с language="en" + initial_prompt
 """
 
 import numpy as np
@@ -20,21 +24,23 @@ import config
 SAMPLE_RATE       = 16_000  # Hz; Whisper ожидает именно 16 кГц
 WAKE_CHUNK_SEC    = 2.0     # длина чанка прослушивания для wake word
 SILENCE_THRESHOLD = 0.02    # пиковая амплитуда ниже этого = тишина
-SILENCE_SECONDS   = 1.5     # пауза, после которой команда считается завершённой
+SILENCE_SECONDS   = 2.5     # пауза, после которой команда считается завершённой
+                            # (увеличено с 1.5 — при запинающейся речи короткая
+                            # пауза на подумать не должна обрывать запись)
 CHUNK_DURATION    = 0.5     # размер одного блока при записи команды (сек)
 
-# Расширенный список: учитываем ошибки транскрипции Whisper на русском/английском
+# Варианты, которые Whisper выдаёт для "Nika" при language="en" —
+# всегда латиница, т.к. язык вывода теперь жёстко английский.
 WAKE_VARIANTS = [
-    "ника", "нике", "нека", "никa",   # кириллица + опечатки
-    "nika", "nica", "nike", "nika,",   # латиница
+    "nika", "nica", "nike", "neeka", "nika,", "nika.",
 ]
 
-# Подсказка для Whisper при распознавании команд на английском.
-# Перечисляем типичные фразы — модель берёт их как контекст и лучше
-# справляется с акцентом и нечёткой речью.
-_EN_PROMPT = (
-    "Nika, hello, yes, no, tell me, what, how are you, "
-    "can you, please, I want, I think, show me, let's talk"
+# Подсказка для Whisper — английский словарь-контекст. Помогает модели
+# ожидать эти слова/обороты даже при нечёткой/запинающейся речи.
+_PROMPT = (
+    "Nika, hello, yes, no, tell me, what, how are you, um, uh, "
+    "can you, please, I want, I think, show me, let's talk, "
+    "open, search, find, type, write"
 )
 
 
@@ -100,7 +106,7 @@ def listen_for_followup(model: whisper.Whisper, timeout_sec: float = 10.0) -> st
             if audio is None:
                 continue
             result = model.transcribe(
-                audio, language="en", fp16=False, initial_prompt=_EN_PROMPT
+                audio, language="en", fp16=False, initial_prompt=_PROMPT
             )
             text = result["text"].strip()
             if text:
@@ -117,7 +123,7 @@ def listen_for_wake_word(model: whisper.Whisper) -> str:
     Возвращает команду пользователя (текст запроса к LLM).
     """
     wake_chunk_size = int(SAMPLE_RATE * WAKE_CHUNK_SEC)
-    print("[ASR] Жду слово активации ('Ника')...")
+    print("[ASR] Жду слово активации ('Nika')...")
 
     while True:
         # Запись фиксированного чанка для поиска wake word
@@ -129,7 +135,7 @@ def listen_for_wake_word(model: whisper.Whisper) -> str:
         if float(np.max(np.abs(chunk))) < SILENCE_THRESHOLD:
             continue
 
-        result = model.transcribe(chunk.flatten(), language=None, fp16=False)
+        result = model.transcribe(chunk.flatten(), language="en", fp16=False)
         text = result["text"].strip().lower()
 
         if not text:
@@ -149,8 +155,9 @@ def listen_for_wake_word(model: whisper.Whisper) -> str:
                 continue
 
             result2 = model.transcribe(
-                audio, language="en", fp16=False, initial_prompt=_EN_PROMPT
+                audio, language="en", fp16=False, initial_prompt=_PROMPT
             )
             command = result2["text"].strip()
             if command:
+                print(f"[ASR] команда: «{command.lower()}»")
                 return command
