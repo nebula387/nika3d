@@ -7,6 +7,10 @@ venv/
 # Секреты
 .env
 
+# Личный образец голоса (сгенерирован из ElevenLabs-аккаунта пользователя,
+# используется для клонирования голоса в XTTS) — не для публикации
+brain/assets/
+
 # Godot
 godot_project/.godot/
 godot_project/export_presets.cfg

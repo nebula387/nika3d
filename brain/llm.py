@@ -124,13 +124,53 @@ def _extract_currency_pair(text: str) -> tuple[str, str]:
     return config.DEFAULT_FX_BASE, config.DEFAULT_FX_TARGET
 
 
+# ── Память сессии ──────────────────────────────────────────────────────────────
+# Живёт, пока работает процесс main.py — при перезапуске обнуляется.
+# Используется только в обычном разговоре (_ask_conversation): там от истории
+# больше всего пользы (местоимения, "а что насчёт...") и меньше риска, что
+# история собьёт модель с формата — в отличие от строгого JSON в _ask_action.
+_history: list[dict] = []
+
+_FORGET_PHRASES = [
+    "forget everything", "forget what we talked about", "clear your memory",
+    "clear the conversation", "start a new conversation", "let's start over",
+    "reset the conversation", "forget our conversation",
+]
+
+
+def _remember(user_text: str, reply: str) -> None:
+    _history.append({"role": "user", "content": user_text})
+    _history.append({"role": "assistant", "content": reply})
+    max_messages = config.MAX_HISTORY_TURNS * 2
+    if len(_history) > max_messages:
+        del _history[: len(_history) - max_messages]
+
+
+def reset_history() -> None:
+    _history.clear()
+
+
 def ask(user_text: str) -> tuple[str, dict | None]:
     """Возвращает (текст_ответа, action_или_None)."""
+    lower = user_text.lower()
+    if any(p in lower for p in _FORGET_PHRASES):
+        reset_history()
+        print("[LLM] память разговора очищена")
+        return "Okay, I've cleared our conversation. What's up?", None
+
     if _is_web_query(user_text):
-        return _ask_web(user_text), None
+        reply = _ask_web(user_text)
+        _remember(user_text, reply)
+        return reply, None
+
     if _is_action(user_text):
-        return _ask_action(user_text)
-    return _ask_conversation(user_text), None
+        reply, action = _ask_action(user_text)
+        _remember(user_text, reply)
+        return reply, action
+
+    reply = _ask_conversation(user_text)
+    _remember(user_text, reply)
+    return reply, None
 
 
 # Диапазоны CJK-символов (китайский/японский/корейский) — маленькие локальные
@@ -187,7 +227,7 @@ def _ask_web(user_text: str) -> str:
 # ── Обычный разговор ───────────────────────────────────────────────────────────
 
 def _ask_conversation(user_text: str) -> str:
-    raw = _call(_CONV_PROMPT, user_text, max_tokens=256)
+    raw = _call(_CONV_PROMPT, user_text, max_tokens=256, history=_history)
     reply = _strip_cjk(raw)
     print(f"[LLM] беседа: «{reply[:100]}»")
     return reply
@@ -249,18 +289,21 @@ def _resolve_model() -> str:
 
 # ── HTTP-вызов ────────────────────────────────────────────────────────────────
 
-def _call(system_prompt: str, user_text: str, max_tokens: int = 256) -> str:
+def _call(system_prompt: str, user_text: str, max_tokens: int = 256,
+          history: list[dict] | None = None) -> str:
     url = f"{config.LLM_BASE_URL.rstrip('/')}/chat/completions"
     headers = {
         "Authorization": f"Bearer {config.LLM_API_KEY}",
         "Content-Type": "application/json",
     }
+    messages = [{"role": "system", "content": system_prompt}]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": user_text})
+
     body = {
         "model":       _resolve_model(),
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_text},
-        ],
+        "messages":    messages,
         "max_tokens":  max_tokens,
         "temperature": 0.7,
     }

@@ -50,6 +50,13 @@ WEATHER_CITY   = os.getenv("WEATHER_CITY", "Moscow")
 DEFAULT_FX_BASE   = os.getenv("DEFAULT_FX_BASE", "USD")
 DEFAULT_FX_TARGET = os.getenv("DEFAULT_FX_TARGET", "RUB")
 
+# ── Память сессии ──────────────────────────────────────────────────────────────
+# Сколько последних пар (вопрос+ответ) помнить в разговоре. Живёт только пока
+# работает main.py — при перезапуске сбрасывается (не пишется на диск).
+# Больше = лучше помнит контекст, но длиннее промпт → медленнее и ближе
+# к пределу контекста модели (обычно 4096 токенов у локальных 7B-моделей).
+MAX_HISTORY_TURNS = int(os.getenv("MAX_HISTORY_TURNS", "6"))
+
 # ── WebSocket-мост ────────────────────────────────────────────────────────────
 BRIDGE_HOST = os.getenv("BRIDGE_HOST", "localhost")
 BRIDGE_PORT = int(os.getenv("BRIDGE_PORT", "8765"))
